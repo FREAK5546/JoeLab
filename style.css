@@ -39,3 +39,24 @@ a { color: var(--accent); }
 footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--border); margin-top: 3rem; }
 .note { padding: .8rem 0; border-bottom: 1px solid var(--border); }
 .note time { color: var(--muted); font-size: .85rem; }
+
+/* Neon logo */
+.logo {
+  color: #39ff88;
+  letter-spacing: .03em;
+  text-shadow: 0 0 4px #39ff88, 0 0 12px #39ff88, 0 0 28px rgba(57,255,136,.65);
+  animation: neon-on 1.4s ease-out 1;
+}
+:root[data-theme="light"] .logo { color: #1a7f37; text-shadow: 0 0 6px rgba(26,127,55,.35); }
+@keyframes neon-on { 0% { opacity: .2 } 6% { opacity: 1 } 10% { opacity: .3 } 16% { opacity: 1 } 100% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .logo { animation: none; } }
+
+/* Build guides */
+.guide-link { display: inline-block; margin-top: .4rem; font-size: .85rem; }
+.card .status { display: block; }
+.steps { padding-left: 1.2rem; }
+.steps li { margin: 0 0 1.4rem; }
+.steps h3 { margin: 0 0 .3rem; }
+pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; line-height: 1.45; }
+.guide-meta li { margin: .2rem 0; }
+.socials span { color: var(--text); }

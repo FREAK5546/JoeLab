@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PID Lab</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#151b23; --panel2:#1b2430; --line:#2a3340; --text:#e6edf3; --mute:#93a0b0;
+    --acc:#2dd4bf; --sp:#fbbf24; --out:#38bdf8; --u:#c4b5fd; --p:#60a5fa; --i:#34d399; --d:#fb923c; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,"Segoe UI",Roboto,sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line)}
+  h1{font-size:20px;margin:0;letter-spacing:.02em}
+  .sub{color:var(--mute);font-size:13px}
+  h3{margin:0 0 6px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+  main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(300px,1fr);gap:14px;padding:14px 20px 28px;max-width:1500px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+  canvas{display:block;width:100%;aspect-ratio:16/10;border-radius:8px;background:#0b0f14;touch-action:manipulation}
+  .btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit}
+  .btn:hover{border-color:var(--acc)}
+  .btn:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .btn[aria-pressed=true]{background:#12352f;border-color:var(--acc)}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+  .chip{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0}
+  .chip span{display:block;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .chip b{display:block;font:600 16px ui-monospace,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;color:var(--mute);font-size:12px}
+  .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  .controls{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px 28px}
+  .row{display:grid;grid-template-columns:150px 1fr 78px;gap:10px;align-items:center;margin:7px 0}
+  .row .lab{font-size:13px}
+  .row .lab i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  input[type=number]{width:100%;background:#0b0f14;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:13px ui-monospace,Consolas,monospace}
+  .check{display:flex;gap:8px;align-items:center;margin:8px 0;cursor:pointer}
+  .btns{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .help{grid-column:1/-1;color:var(--mute);font-size:13px}
+  .help ul{margin:6px 0 0 18px;padding:0}
+  .help li{margin:3px 0}
+  kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;font:12px ui-monospace,Consolas,monospace;color:var(--text)}
+  @media (max-width:860px){ main{grid-template-columns:1fr;padding:12px} .row{grid-template-columns:120px 1fr 70px} .chips{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>PID Lab</h1>
+    <div class="sub">Tune a controller by hand, then break it on purpose.</div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Choose a plant"></nav>
+</header>
+
+<main>
+  <section class="card">
+    <canvas id="sim" aria-label="Animation of the controlled system"></canvas>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="card">
+    <canvas id="scope" aria-label="Plots of response, control effort and PID terms"></canvas>
+    <div class="legend">
+      <span><i style="background:var(--sp)"></i>Setpoint</span>
+      <span><i style="background:var(--out)"></i>Output</span>
+      <span><i style="background:var(--u)"></i>Control effort u</span>
+      <span><i style="background:var(--p)"></i>P term</span>
+      <span><i style="background:var(--i)"></i>I term</span>
+      <span><i style="background:var(--d)"></i>D term</span>
+    </div>
+  </section>
+
+  <section class="card controls">
+    <div>
+      <h3>Gains</h3>
+      <div id="rows-gains"></div>
+      <div class="btns" id="presets" aria-label="Gain presets"></div>
+    </div>
+    <div>
+      <h3>Scenario</h3>
+      <div id="rows-scenario"></div>
+      <label class="check" id="auto-wrap"><input type="checkbox" id="chk-auto"> Auto-step the setpoint (+/-)</label>
+    </div>
+    <div>
+      <h3>Controller options</h3>
+      <label class="check"><input type="checkbox" id="chk-dMeas"> Derivative on measurement (no kick on setpoint steps)</label>
+      <label class="check"><input type="checkbox" id="chk-aw"> Anti-windup (stop integrating while saturated)</label>
+      <div id="rows-run"></div>
+      <div class="btns">
+        <button class="btn" id="btn-kick">Kick <kbd>K</kbd></button>
+        <button class="btn" id="btn-reset">Reset <kbd>R</kbd></button>
+        <button class="btn" id="btn-pause" aria-pressed="false">Pause <kbd>Space</kbd></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card help" id="help"></section>
+</main>
+
+<script>
+/* ======================================================================
+   SIM CORE START  (pure maths, no DOM)
+   ====================================================================== */
+const DT = 1 / 240;          // physics + controller step (s)
+const G = 9.81;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function gauss() {
+  let u = 0;
+  while (u === 0) u = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+// One RK4 step of ds/dt = f(s, u, d), with u and d held constant over the step.
+function rk4(f, s, u, d, dt) {
+  const add = (a, b, k) => a.map((v, i) => v + b[i] * k);
+  const k1 = f(s, u, d);
+  const k2 = f(add(s, k1, dt / 2), u, d);
+  const k3 = f(add(s, k2, dt / 2), u, d);
+  const k4 = f(add(s, k3, dt), u, d);
+  return s.map((v, i) => v + (dt / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+}
+
+/* ---- Plants -------------------------------------------------------------
+   Each plant: state vector s, input u (force or torque), constant disturbance d.
+   scale converts SI -> display units (rad -> deg).                           */
+const PLANTS = {
+  // Mass on a track with viscous friction: m x'' = u + d - b x'
+  cart: {
+    id: 'cart', label: 'Cart', reverse: false, scale: 1, unit: 'm', scopeRange: [-3, 3], noiseMax: 0.05,
+    init: () => [0, 0],
+    deriv: (s, u, d) => [s[1], (u + d - 1.0 * s[1]) / 1.0],
+    measure: (s) => s[0],
+    constrain(sim) {
+      const s = sim.s;
+      if (Math.abs(s[0]) > 3) { s[0] = Math.sign(s[0]) * 3; s[1] = 0; sim.hit = true; }
+    },
+    failed: () => false,
+    kick: (s) => { s[1] += 2.5; },
+  },
+
+  // Inverted pendulum on a cart. State: [x, v, theta, omega], theta from upright (+ = leaning to +x).
+  pendulum: {
+    id: 'pendulum', label: 'Inverted pendulum', reverse: true, scale: 180 / Math.PI, unit: 'deg', scopeRange: [-30, 30], noiseMax: 0.017,
+    init: () => [0, 0, 0.1, 0],
+    deriv: (s, u, d) => {
+      const M = 1.0, m = 0.3, l = 0.5, b = 0.1;
+      const th = s[2], w = s[3], v = s[1];
+      const sn = Math.sin(th), cs = Math.cos(th);
+      const xdd = (u + d - b * v + m * l * w * w * sn - m * G * sn * cs) / (M + m * sn * sn);
+      const thdd = (G * sn - xdd * cs) / l - 0.05 * w;
+      return [v, xdd, w, thdd];
+    },
+    measure: (s) => s[2],
+    constrain(sim) {
+      const s = sim.s;
+      if (Math.abs(s[0]) > 2.6) { s[0] = Math.sign(s[0]) * 2.6; s[1] = 0; sim.hit = true; }
+    },
+    failed: (s) => Math.abs(s[2]) > 1.2,
+    kick: (s) => { s[3] += (Math.random() < 0.5 ? -1 : 1) * 2.0; },
+  },
+
+  // Single robot-arm joint swinging in a vertical plane. theta measured up from horizontal.
+  arm: {
+    id: 'arm', label: 'Robot arm joint', reverse: false, scale: 180 / Math.PI, unit: 'deg', scopeRange: [-90, 120], noiseMax: 0.05,
+    init: () => [0, 0],
+    deriv: (s, u, d) => {
+      const J = 0.1, m = 1.0, lc = 0.25, b = 0.2;
+      return [s[1], (u + d - m * G * lc * Math.cos(s[0]) - b * s[1]) / J];
+    },
+    measure: (s) => s[0],
+    constrain(sim) {
+      const s = sim.s, lo = -1.6, hi = 2.0;
+      if (s[0] < lo) { s[0] = lo; s[1] = Math.max(0, s[1]); sim.hit = true; }
+      if (s[0] > hi) { s[0] = hi; s[1] = Math.min(0, s[1]); sim.hit = true; }
+    },
+    failed: () => false,
+    kick: (s) => { s[1] += 3; },
+  },
+};
+
+/* ---- PID controller ----------------------------------------------------- */
+function makePID() {
+  return { integ: 0, dFilt: 0, yPrev: 0, ePrev: 0, primed: false, P: 0, I: 0, D: 0, u: 0, uRaw: 0 };
+}
+
+// g: {kp,ki,kd}   o: {umax, aw, dMeas, dTau}
+function pidStep(c, y, r, reverse, g, dt, o) {
+  const e = reverse ? y - r : r - y;                 // reverse-acting for the pendulum
+  if (!c.primed) { c.yPrev = y; c.ePrev = e; c.primed = true; }
+  const raw = o.dMeas ? (reverse ? 1 : -1) * (y - c.yPrev) / dt : (e - c.ePrev) / dt;
+  c.dFilt += (dt / (o.dTau + dt)) * (raw - c.dFilt);  // first-order low-pass on the derivative
+  c.yPrev = y; c.ePrev = e;
+
+  c.P = g.kp * e;
+  c.D = g.kd * c.dFilt;
+  const integNew = c.integ + e * dt;
+  const uNew = c.P + g.ki * integNew + c.D;
+  const saturated = Math.abs(uNew) > o.umax;
+  // Conditional integration: skip accumulating while saturated and pushing further into saturation.
+  if (!o.aw || !saturated || Math.sign(e) !== Math.sign(uNew)) c.integ = integNew;
+  c.I = g.ki * c.integ;
+  c.uRaw = c.P + c.I + c.D;
+  c.u = clamp(c.uRaw, -o.umax, o.umax);
+  return c.u;
+}
+
+/* ---- Simulation --------------------------------------------------------- */
+function makeSim(id) {
+  const p = PLANTS[id];
+  return { p, s: p.init(), pid: makePID(), t: 0, hit: false, fell: false, last: { y: p.measure(p.init()), r: 0, u: 0 } };
+}
+
+// prm (SI units): kp ki kd r d noise umax aw dMeas dTau cx cv
+function simStep(sim, prm) {
+  const p = sim.p, s = sim.s;
+  let r = prm.r;
+  if (p.id === 'pendulum') r = clamp(-prm.cx * s[0] - prm.cv * s[1], -0.35, 0.35);  // outer centering loop
+  const y = p.measure(s) + (prm.noise > 0 ? prm.noise * gauss() : 0);
+  const u = pidStep(sim.pid, y, r, p.reverse, prm, DT, prm);
+  sim.s = rk4(p.deriv, s, u, prm.d, DT);
+  p.constrain(sim);
+  sim.t += DT;
+  if (p.failed(sim.s)) sim.fell = true;
+  sim.last = { y: p.measure(sim.s), r, u };
+}
+/* SIM CORE END */
+
+/* ======================================================================
+   UI
+   ====================================================================== */
+const UI = {
+  cart: {
+    r: [-2.5, 2.5, 0.05, 1.5], kp: [0, 60, 0.1, 10], ki: [0, 40, 0.05, 0.3], kd: [0, 30, 0.1, 6],
+    d: [-10, 10, 0.5, 0], umax: [1, 50, 1, 20], cx: null, auto: true,
+    rLabel: 'Target position (m)', dLabel: 'Wind force (N)', uLabel: 'Force limit (N)',
+    presets: [
+      { n: 'Tuned PID', kp: 10, ki: 0.3, kd: 6 },
+      { n: 'P only', kp: 10, ki: 0, kd: 0 },
+      { n: 'PD', kp: 10, ki: 0, kd: 6 },
+      { n: 'Too aggressive', kp: 50, ki: 20, kd: 1 },
+    ],
+    tips: [
+      'Choose <b>P only</b>: the cart overshoots and rings because friction is the only damping. Now add Kd to calm it.',
+      'Choose <b>PD</b> and set the wind force to 5 N: the cart stops short of the target (error = wind / Kp). Raise Ki to about 5 and the error disappears.',
+      'Turn <b>anti-windup</b> off, set the force limit to 3 N and Ki to 20: the integral term winds up and the cart slams into the wall. Turn anti-windup on to fix it.',
+      'Click on the track to move the target. Use <b>Kick</b> to give the cart a shove.',
+    ],
+  },
+  pendulum: {
+    r: null, kp: [0, 120, 0.5, 30], ki: [0, 60, 0.5, 0], kd: [0, 30, 0.1, 3],
+    d: [-10, 10, 0.5, 0], umax: [5, 80, 1, 40], cx: [0, 10, 0.1, 1], auto: false,
+    dLabel: 'Constant push (N)', uLabel: 'Force limit (N)', cxLabel: 'Cart centering (deg/m)',
+    presets: [
+      { n: 'Balanced', kp: 30, ki: 0, kd: 3 },
+      { n: 'Too little Kp', kp: 8, ki: 0, kd: 3 },
+      { n: 'No Kd', kp: 30, ki: 0, kd: 0 },
+      { n: 'Stiff', kp: 80, ki: 0, kd: 8 },
+    ],
+    tips: [
+      'The pendulum is <b>unstable</b>. With Kp below about 12 it cannot be caught, and with no Kd it swings wider and wider until it falls.',
+      'Click left or right of the cart to give it a push, or press <b>Kick</b>. Lower the force limit and the same push can topple it.',
+      'Set <b>cart centering</b> to 0 and the cart slowly drifts into a wall. Raise it to keep the cart near the middle.',
+      'Add a constant push with Ki at zero: the pendulum ends up leaning. Add some Ki and it straightens up.',
+    ],
+  },
+  arm: {
+    r: [-80, 110, 1, 45], kp: [0, 100, 0.5, 25], ki: [0, 80, 0.5, 10], kd: [0, 20, 0.1, 2.5],
+    d: [-3, 3, 0.1, 0], umax: [1, 20, 0.5, 8], cx: null, auto: true,
+    rLabel: 'Target angle (deg)', dLabel: 'Extra torque (N·m)', uLabel: 'Torque limit (N·m)',
+    presets: [
+      { n: 'Tuned PID', kp: 25, ki: 10, kd: 2.5 },
+      { n: 'P only', kp: 25, ki: 0, kd: 0 },
+      { n: 'PD', kp: 25, ki: 0, kd: 2.5 },
+      { n: 'Sluggish', kp: 6, ki: 1, kd: 1 },
+    ],
+    tips: [
+      'Gravity keeps pulling the arm down. With <b>P only</b> it stops short of the target. Ki removes that gap.',
+      'Add sensor noise, then raise Kd: the torque trace gets jagged because the derivative amplifies noise.',
+      'Click around the pivot in the animation to set the target angle.',
+      'Lower the torque limit below about 2.5 N·m and the arm can no longer lift itself from horizontal.',
+    ],
+  },
+};
+
+const $ = (id) => document.getElementById(id);
+const css = getComputedStyle(document.documentElement);
+const C = {};
+['--bg', '--panel', '--line', '--text', '--mute', '--acc', '--sp', '--out', '--u', '--p', '--i', '--d', '--bad']
+  .forEach((k) => { C[k.slice(2)] = css.getPropertyValue(k).trim() || '#888'; });
+
+const simCanvas = $('sim'), scopeCanvas = $('scope');
+const params = { kp: 0, ki: 0, kd: 0, r: 0, d: 0, noise: 0, umax: 10, cx: 0, speed: 1, period: 4, auto: false, aw: true, dMeas: true };
+const CV_RATIO = 1.2;            // centering velocity gain relative to position gain
+let plantId = 'cart', sim = null, paused = false;
+let hist = [], stepLog = null, rPrev = null, sampleCtr = 0, chipCtr = 0;
+let acc = 0, lastNow = performance.now();
+
+/* ---- Control rows ------------------------------------------------------- */
+const fmt = (v) => { const a = Math.abs(v); return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2); };
+
+function rowHTML(key, label, color) {
+  const dot = color ? `<i style="background:var(--${color})"></i>` : '';
+  return `<div class="row" id="row-${key}"><label class="lab" for="rng-${key}">${dot}<span id="lab-${key}">${label}</span></label>` +
+    `<input type="range" id="rng-${key}"><input type="number" id="num-${key}" aria-label="${label} value"></div>`;
+}
+
+$('rows-gains').innerHTML = rowHTML('kp', 'Kp (proportional)', 'p') + rowHTML('ki', 'Ki (integral)', 'i') + rowHTML('kd', 'Kd (derivative)', 'd');
+$('rows-scenario').innerHTML = rowHTML('r', 'Target', 'sp') + rowHTML('period', 'Auto-step period (s)') + rowHTML('d', 'Disturbance') +
+  rowHTML('noise', 'Sensor noise (%)') + rowHTML('umax', 'Actuator limit') + rowHTML('cx', 'Cart centering');
+$('rows-run').innerHTML = rowHTML('speed', 'Sim speed (x)');
+
+function setParam(key, v) {
+  params[key] = v;
+  $('rng-' + key).value = v;
+  $('num-' + key).value = fmt(v);
+}
+
+function bindRow(key) {
+  const rng = $('rng-' + key), num = $('num-' + key);
+  rng.addEventListener('input', () => { const v = parseFloat(rng.value); params[key] = v; num.value = fmt(v); });
+  num.addEventListener('change', () => { const v = parseFloat(num.value); if (!Number.isNaN(v)) { params[key] = v; rng.value = v; } });
+}
+['kp', 'ki', 'kd', 'r', 'period', 'd', 'noise', 'umax', 'cx', 'speed'].forEach(bindRow);
+
+function configRow(key, spec, label) {
+  const row = $('row-' + key);
+  row.hidden = !spec;
+  if (!spec) return;
+  const [mn, mx, st, def] = spec;
+  for (const el of [$('rng-' + key), $('num-' + key)]) { el.min = mn; el.max = mx; el.step = st; }
+  if (label) $('lab-' + key).textContent = label;
+  setParam(key, def);
+}
+
+for (const [k, spec] of [['period', [1, 10, 0.5, 4]], ['noise', [0, 100, 1, 0]], ['speed', [0.1, 3, 0.05, 1]]]) configRow(k, spec);
+
+$('chk-auto').addEventListener('change', (e) => { params.auto = e.target.checked; });
+$('chk-aw').addEventListener('change', (e) => { params.aw = e.target.checked; });
+$('chk-dMeas').addEventListener('change', (e) => { params.dMeas = e.target.checked; });
+$('chk-aw').checked = params.aw;
+$('chk-dMeas').checked = params.dMeas;
+
+/* ---- Plant switching ---------------------------------------------------- */
+function buildTabs() {
+  const nav = $('tabs');
+  nav.innerHTML = '';
+  for (const id of Object.keys(PLANTS)) {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = PLANTS[id].label;
+    b.setAttribute('aria-pressed', String(id === plantId));
+    b.addEventListener('click', () => applyPlant(id));
+    nav.appendChild(b);
+  }
+}
+
+function applyPlant(id) {
+  plantId = id;
+  const u = UI[id];
+  buildTabs();
+  configRow('kp', u.kp); configRow('ki', u.ki); configRow('kd', u.kd);
+  configRow('r', u.r, u.rLabel);
+  configRow('d', u.d, u.dLabel);
+  configRow('umax', u.umax, u.uLabel);
+  configRow('cx', u.cx, u.cxLabel);
+  setParam('noise', 0);
+  params.auto = !!u.auto;
+  $('chk-auto').checked = params.auto;
+  $('auto-wrap').hidden = !u.auto;
+  $('row-period').hidden = !u.auto;
+
+  const pres = $('presets');
+  pres.innerHTML = '';
+  for (const p of u.presets) {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.textContent = p.n;
+    b.addEventListener('click', () => { setParam('kp', p.kp); setParam('ki', p.ki); setParam('kd', p.kd); });
+    pres.appendChild(b);
+  }
+
+  $('help').innerHTML = '<h3>Things to try</h3><ul>' + u.tips.map((t) => `<li>${t}</li>`).join('') + '</ul>' +
+    '<p>Shortcuts: <kbd>Space</kbd> pause, <kbd>R</kbd> reset, <kbd>K</kbd> kick. Everything updates live while you drag the sliders.</p>';
+  resetSim();
+}
+
+function resetSim() {
+  sim = makeSim(plantId);
+  hist = [];
+  stepLog = null;
+  rPrev = null;
+  acc = 0;
+}
+
+/* ---- Setpoint helpers --------------------------------------------------- */
+function rEff() {      // effective setpoint in display units, including auto-step
+  let r = params.r;
+  if (params.auto && !$('row-r').hidden) { if (Math.floor(sim.t / params.period) % 2 === 1) r = -r; }
+  return r;
+}
+
+function buildPrm() {
+  const p = sim.p;
+  const cx = params.cx * Math.PI / 180;
+  return {
+    kp: params.kp, ki: params.ki, kd: params.kd, d: params.d,
+    noise: (params.noise / 100) * p.noiseMax, umax: params.umax,
+    aw: params.aw, dMeas: params.dMeas, dTau: 0.04,
+    cx, cv: cx * CV_RATIO, r: 0,
+  };
+}
+
+/* ---- Main loop ---------------------------------------------------------- */
+function stepOnce(prm) {
+  const p = sim.p, sc = p.scale;
+  const rd = p.id === 'pendulum' ? 0 : rEff();
+  if (rPrev === null || Math.abs(rd - rPrev) > 1e-9) {
+    rPrev = rd;
+    if (p.id !== 'pendulum') stepLog = { t0: sim.t, y0: p.measure(sim.s) * sc, r: rd, s: [] };
+  }
+  prm.r = rd / sc;
+  simStep(sim, prm);
+  if (++sampleCtr % 4 === 0) {
+    const L = sim.last;
+    const rec = { t: sim.t, r: L.r * sc, y: L.y * sc, u: L.u, P: sim.pid.P, I: sim.pid.I, D: sim.pid.D };
+    hist.push(rec);
+    while (hist.length && hist[0].t < sim.t - 10.5) hist.shift();
+    if (stepLog && stepLog.s.length < 6000) stepLog.s.push({ t: rec.t, y: rec.y });
+  }
+}
+
+function frame(now) {
+  const dtReal = Math.min(0.05, (now - lastNow) / 1000);
+  lastNow = now;
+  if (!paused && !sim.fell) acc += dtReal * params.speed;
+  const prm = buildPrm();
+  let n = 0;
+  while (acc >= DT && n < 1500 && !sim.fell) { stepOnce(prm); acc -= DT; n++; }
+  if (sim.fell) acc = 0;
+  drawSim();
+  drawScope();
+  if (++chipCtr % 6 === 0) updateChips();
+  requestAnimationFrame(frame);
+}
+
+/* ---- Metrics chips ------------------------------------------------------ */
+function stepStats() {
+  if (!stepLog) return null;
+  const { y0, r, s, t0 } = stepLog;
+  const A = r - y0;
+  if (Math.abs(A) < 1e-6 || s.length < 5) return null;
+  let t10 = null, t90 = null, peak = -Infinity, lastOut = null;
+  for (const q of s) {
+    const f = (q.y - y0) / A;
+    if (t10 === null && f >= 0.1) t10 = q.t;
+    if (t90 === null && f >= 0.9) t90 = q.t;
+    if (f > peak) peak = f;
+    if (Math.abs(q.y - r) > 0.02 * Math.abs(A)) lastOut = q.t;
+  }
+  const now = s[s.length - 1];
+  return {
+    rise: t10 !== null && t90 !== null ? t90 - t10 : null,
+    os: Math.max(0, (peak - 1) * 100),
+    settle: lastOut === null ? 0 : (now.t - lastOut < 0.5 ? null : lastOut - t0),
+    err: r - now.y,
+  };
+}
+
+function setChips(items) {
+  const el = $('chips');
+  if (el.children.length !== items.length) {
+    el.innerHTML = items.map((_, i) => `<div class="chip"><span id="cl${i}"></span><b id="cv${i}"></b></div>`).join('');
+  }
+  items.forEach(([l, v], i) => { $('cl' + i).textContent = l; $('cv' + i).textContent = v; });
+}
+
+function updateChips() {
+  const p = sim.p, sc = p.scale, u = p.unit === 'deg' ? '°' : ' m';
+  if (p.id === 'pendulum') {
+    setChips([
+      ['Angle', (sim.s[2] * sc).toFixed(1) + '°'],
+      ['Cart position', sim.s[0].toFixed(2) + ' m'],
+      ['Time balanced', sim.t.toFixed(1) + ' s'],
+      ['Status', sim.fell ? 'Fell over' : sim.hit ? 'Hit a wall' : 'Balanced'],
+    ]);
+    return;
+  }
+  const st = stepStats();
+  const f = (v, d, s) => (v === null ? '…' : v.toFixed(d) + s);
+  setChips([
+    ['Rise time (10-90%)', st ? f(st.rise, 2, ' s') : '—'],
+    ['Overshoot', st ? st.os.toFixed(1) + ' %' : '—'],
+    ['Settling (2%)', st ? f(st.settle, 2, ' s') : '—'],
+    ['Error now', st ? st.err.toFixed(p.id === 'arm' ? 1 : 3) + u : '—'],
+  ]);
+}
+
+/* ---- Drawing helpers ---------------------------------------------------- */
+function fit(c) {
+  const r = c.getBoundingClientRect();
+  const d = window.devicePixelRatio || 1;
+  const w = Math.max(10, Math.round(r.width * d)), h = Math.max(10, Math.round(r.height * d));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext('2d');
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  return { ctx, w: r.width, h: r.height };
+}
+
+function rrect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+
+function arrow(ctx, x0, y0, x1, y1, color, wdt) {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  if (len < 3) return;
+  const a = Math.atan2(y1 - y0, x1 - x0), hd = Math.min(10, len * 0.5);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = wdt || 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - Math.cos(a) * hd * 0.6, y1 - Math.sin(a) * hd * 0.6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - hd * Math.cos(a - 0.45), y1 - hd * Math.sin(a - 0.45));
+  ctx.lineTo(x1 - hd * Math.cos(a + 0.45), y1 - hd * Math.sin(a + 0.45));
+  ctx.closePath(); ctx.fill();
+}
+
+function drawCartScene(ctx, w, h, pend) {
+  const lim = pend ? 2.6 : 3, span = pend ? 6 : 7;
+  const sc = (w * 0.92) / span, ox = w / 2, gy = h * 0.76;
+  const X = (m) => ox + m * sc;
+  const x = sim.s[0], umax = params.umax;
+
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(X(-lim - 0.3), gy + 20); ctx.lineTo(X(lim + 0.3), gy + 20); ctx.stroke();
+  ctx.fillStyle = C.mute; ctx.textAlign = 'center';
+  for (let m = -Math.floor(lim); m <= Math.floor(lim); m++) { ctx.fillRect(X(m) - 0.5, gy + 20, 1, 6); ctx.fillText(m + ' m', X(m), gy + 42); }
+  ctx.fillStyle = C.bad;
+  ctx.fillRect(X(-lim - 0.3) - 4, gy - 34, 5, 54); ctx.fillRect(X(lim + 0.3) - 1, gy - 34, 5, 54);
+
+  if (!pend) {
+    const tx = X(rEff());
+    ctx.strokeStyle = C.sp; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(tx, gy - 78); ctx.lineTo(tx, gy + 20); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = C.sp; ctx.fillRect(tx, gy - 78, 26, 14);
+    ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.font = '10px system-ui, sans-serif'; ctx.fillText('goal', tx + 3, gy - 67); ctx.font = '12px system-ui, sans-serif';
+  }
+
+  const cw = 0.8 * sc, ch = Math.min(0.42 * sc, 50);
+  ctx.fillStyle = '#334155'; ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2;
+  rrect(ctx, X(x) - cw / 2, gy - ch, cw, ch, 6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0b0f14'; ctx.strokeStyle = '#64748b';
+  for (const dx of [-cw * 0.3, cw * 0.3]) { ctx.beginPath(); ctx.arc(X(x) + dx, gy + 10, 10, 0, 7); ctx.fill(); ctx.stroke(); }
+
+  if (pend) {
+    const th = sim.s[2], px = X(x), py = gy - ch, Lr = Math.min(h * 0.55, w * 0.32);
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.setLineDash([4, 5]);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - Lr - 14); ctx.stroke(); ctx.setLineDash([]);
+    const tx = px + Lr * Math.sin(th), ty = py - Lr * Math.cos(th);
+    ctx.strokeStyle = C.out; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = C.out; ctx.beginPath(); ctx.arc(tx, ty, 12, 0, 7); ctx.fill();
+    ctx.fillStyle = '#0b0f14'; ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.fill();
+    ctx.fillStyle = C.mute; ctx.textAlign = 'left';
+    ctx.fillText('angle ' + (th * 180 / Math.PI).toFixed(1) + '°', 12, 38);
+  }
+
+  arrow(ctx, X(x), gy - ch / 2, X(x) + (sim.last.u / umax) * w * 0.22, gy - ch / 2, C.u, 4);
+  if (Math.abs(params.d) > 1e-9) {
+    const dir = Math.sign(params.d), len = clamp(Math.abs(params.d) / 10, 0.15, 1) * 70, x0 = w - 100;
+    arrow(ctx, x0 - dir * len / 2, 30, x0 + dir * len / 2, 30, C.d, 3);
+    ctx.fillStyle = C.mute; ctx.textAlign = 'center'; ctx.fillText('disturbance', x0, 52);
+  }
+}
+
+function drawArm(ctx, w, h) {
+  const px = w * 0.3, py = h * 0.62, Lr = Math.min(w * 0.42, h * 0.52);
+  const a = sim.s[0], ar = sim.last.r, u = sim.last.u, umax = params.umax;
+  const tip = (ang) => [px + Lr * Math.cos(ang), py - Lr * Math.sin(ang)];
+
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.setLineDash([4, 5]);
+  ctx.beginPath(); ctx.moveTo(px - 24, py); ctx.lineTo(px + Lr + 30, py); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px, py, Lr, -2.0, 1.6); ctx.stroke(); ctx.setLineDash([]);
+
+  const [gx, gyy] = tip(ar);
+  ctx.strokeStyle = C.sp; ctx.lineWidth = 3; ctx.setLineDash([6, 5]);
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(gx, gyy); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.sp; ctx.beginPath(); ctx.arc(gx, gyy, 6, 0, 7); ctx.fill();
+
+  const [tx, ty] = tip(a);
+  ctx.strokeStyle = C.out; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.fillStyle = C.out; ctx.beginPath(); ctx.arc(tx, ty, 13, 0, 7); ctx.fill();
+  ctx.fillStyle = '#0b0f14'; ctx.beginPath(); ctx.arc(px, py, 6, 0, 7); ctx.fill();
+
+  const frac = clamp(u / umax, -1, 1), delta = frac * 1.2;
+  if (Math.abs(delta) > 0.02) {
+    ctx.strokeStyle = C.u; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(px, py, 38, -a, -(a + delta), delta > 0); ctx.stroke();
+  }
+  arrow(ctx, tx, ty + 16, tx, ty + 46, C.mute, 2);
+  ctx.fillStyle = C.mute; ctx.textAlign = 'left';
+  ctx.fillText('angle ' + (a * 180 / Math.PI).toFixed(1) + '°', 12, 38);
+  ctx.fillText('gravity', tx + 8, ty + 50);
+  if (Math.abs(params.d) > 1e-9) ctx.fillText('extra torque ' + params.d.toFixed(1) + ' N·m', 12, 56);
+}
+
+function drawSim() {
+  const { ctx, w, h } = fit(simCanvas);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '12px system-ui, sans-serif';
+  const id = sim.p.id;
+  if (id === 'arm') drawArm(ctx, w, h); else drawCartScene(ctx, w, h, id === 'pendulum');
+  ctx.fillStyle = C.mute; ctx.textAlign = 'left';
+  ctx.fillText('t = ' + sim.t.toFixed(1) + ' s' + (paused ? '  (paused)' : ''), 12, 20);
+  if (sim.fell) {
+    ctx.fillStyle = 'rgba(13,17,23,0.72)'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = C.bad; ctx.textAlign = 'center'; ctx.font = '600 22px system-ui, sans-serif';
+    ctx.fillText('It fell over at t = ' + sim.t.toFixed(1) + ' s', w / 2, h * 0.45);
+    ctx.fillStyle = C.text; ctx.font = '14px system-ui, sans-serif';
+    ctx.fillText('Adjust the gains and press R to try again', w / 2, h * 0.45 + 28);
+  }
+}
+
+/* ---- Scope -------------------------------------------------------------- */
+function niceCeil(v) {
+  const e = Math.pow(10, Math.floor(Math.log10(v))), f = v / e;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e;
+}
+
+function panel(ctx, x, y, w, h, t0, t1, lo, hi, label, series, hlines) {
+  ctx.fillStyle = '#0f151d'; ctx.fillRect(x, y, w, h);
+  const Y = (v) => y + h - ((v - lo) / (hi - lo)) * h;
+  const T = (t) => x + ((t - t0) / (t1 - t0)) * w;
+  ctx.lineWidth = 1; ctx.strokeStyle = C.line; ctx.fillStyle = C.mute; ctx.textAlign = 'right';
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + ((hi - lo) * i) / 4, yy = Y(v);
+    ctx.globalAlpha = i === 2 && lo < 0 ? 0.9 : 0.4;
+    ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + w, yy); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillText(Math.abs(v) >= 100 ? v.toFixed(0) : (Math.round(v * 100) / 100).toString(), x - 5, yy + 4);
+  }
+  ctx.globalAlpha = 0.25;
+  for (let t = Math.ceil(t0 / 2) * 2; t <= t1; t += 2) { ctx.beginPath(); ctx.moveTo(T(t), y); ctx.lineTo(T(t), y + h); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left'; ctx.fillStyle = C.mute; ctx.fillText(label, x + 6, y + 14);
+
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  for (const hl of hlines || []) {
+    ctx.strokeStyle = hl.c; ctx.setLineDash([4, 4]); ctx.globalAlpha = 0.7;
+    ctx.beginPath(); ctx.moveTo(x, Y(hl.v)); ctx.lineTo(x + w, Y(hl.v)); ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  for (const s of series) {
+    ctx.strokeStyle = s.c; ctx.lineWidth = s.w || 1.6; ctx.setLineDash(s.dash || []);
+    ctx.beginPath();
+    let started = false;
+    for (const q of hist) {
+      if (q.t < t0) continue;
+      const xx = T(q.t), yy = Y(q[s.k]);
+      if (!started) { ctx.moveTo(xx, yy); started = true; } else ctx.lineTo(xx, yy);
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.restore();
+}
+
+function drawScope() {
+  const { ctx, w, h } = fit(scopeCanvas);
+  ctx.clearRect(0, 0, w, h);
+  ctx.font = '11px system-ui, sans-serif';
+  const L = 46, R = 10, T = 8, B = 18, GAP = 12;
+  const H = h - T - B - 2 * GAP, hs = [H * 0.44, H * 0.28, H * 0.28];
+  const pw = w - L - R, t1 = sim.t, t0 = t1 - 10;
+  const p = sim.p, um = params.umax;
+  let y = T;
+  panel(ctx, L, y, pw, hs[0], t0, t1, p.scopeRange[0], p.scopeRange[1], 'Output (' + p.unit + ')',
+    [{ k: 'r', c: C.sp, dash: [6, 4] }, { k: 'y', c: C.out, w: 2.2 }]);
+  y += hs[0] + GAP;
+  panel(ctx, L, y, pw, hs[1], t0, t1, -um * 1.2, um * 1.2, 'Control effort u',
+    [{ k: 'u', c: C.u, w: 2 }], [{ v: um, c: C.bad }, { v: -um, c: C.bad }]);
+  y += hs[1] + GAP;
+  let m = 0;
+  for (const q of hist) m = Math.max(m, Math.abs(q.P), Math.abs(q.I), Math.abs(q.D));
+  m = niceCeil(Math.max(m * 1.1, 0.5));
+  panel(ctx, L, y, pw, hs[2], t0, t1, -m, m, 'P, I, D terms',
+    [{ k: 'P', c: C.p }, { k: 'I', c: C.i }, { k: 'D', c: C.d }]);
+  ctx.fillStyle = C.mute; ctx.textAlign = 'left'; ctx.fillText('-10 s', L, h - 4);
+  ctx.textAlign = 'right'; ctx.fillText('now', L + pw, h - 4);
+}
+
+/* ---- Input -------------------------------------------------------------- */
+function kick() {
+  if (sim.fell) return;
+  sim.p.kick(sim.s);
+}
+
+function reset() { resetSim(); }
+
+function togglePause() {
+  paused = !paused;
+  $('btn-pause').setAttribute('aria-pressed', String(paused));
+  $('btn-pause').firstChild.textContent = paused ? 'Resume ' : 'Pause ';
+}
+
+$('btn-kick').addEventListener('click', kick);
+$('btn-reset').addEventListener('click', reset);
+$('btn-pause').addEventListener('click', togglePause);
+
+document.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT' && e.target.type === 'number') return;
+  if (e.key === ' ') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'r' || e.key === 'R') reset();
+  else if (e.key === 'k' || e.key === 'K') kick();
+});
+
+simCanvas.addEventListener('pointerdown', (e) => {
+  const rect = simCanvas.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top, w = rect.width, h = rect.height;
+  const id = sim.p.id;
+  if (id === 'cart') {
+    const span = 7, sc = (w * 0.92) / span;
+    const spec = UI.cart.r;
+    setParam('r', clamp(Math.round(((px - w / 2) / sc) / 0.05) * 0.05, spec[0], spec[1]));
+    params.auto = false; $('chk-auto').checked = false;
+  } else if (id === 'arm') {
+    const ang = Math.atan2(h * 0.62 - py, px - w * 0.3) * 180 / Math.PI;
+    const spec = UI.arm.r;
+    setParam('r', clamp(Math.round(ang), spec[0], spec[1]));
+    params.auto = false; $('chk-auto').checked = false;
+  } else if (id === 'pendulum' && !sim.fell) {
+    const sc = (w * 0.92) / 6;
+    sim.s[3] += px > w / 2 + sim.s[0] * sc ? 1.5 : -1.5;
+  }
+});
+
+/* ---- Go ----------------------------------------------------------------- */
+applyPlant('cart');
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
