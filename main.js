@@ -20,11 +20,13 @@
 // Projects are defined here, so adding a new one = adding one object.
 // link  = a page or folder with the project files (e.g. "games/pong/")
 // guide = the key of an entry in GUIDES below, for projects whose files aren't posted
+// image = picture on the card (put files in images/), alt = its description, credit = photo credit text
+// members: true = the build guide needs sign-in (only when sign-in is set up, see AUTH-SETUP.md)
 const PROJECTS = [
-  { name: "Offline AI Chatbot", desc: "A local LLM chatbot (Llama models) that runs fully offline on your own PC's CPU/GPU.", tags: ["Python", "AI", "Ollama"], status: "Completed", link: "", guide: "offline-ai-chatbot" },
-  { name: "Gesture Lab", desc: "Hand-gesture control with OpenCV + MediaPipe: draw in the air, count fingers, move your mouse.", tags: ["Python", "CV"], status: "Completed", link: "", guide: "gesture-lab" },
+  { name: "Offline AI Chatbot", desc: "A local LLM chatbot (Llama models) that runs fully offline on your own PC's CPU/GPU.", tags: ["Python", "AI", "Ollama"], status: "Completed", link: "", guide: "offline-ai-chatbot", members: true, image: "images/chatbot-logo.svg", alt: "Chat bubble with a crossed-out Wi-Fi symbol" },
+  { name: "Gesture Lab", desc: "Hand-gesture control with OpenCV + MediaPipe: draw in the air, count fingers, move your mouse.", tags: ["Python", "CV"], status: "Completed", link: "", guide: "gesture-lab", members: true },
   { name: "PID Lab", desc: "Interactive PID controller simulator: cart, inverted pendulum and robot arm.", tags: ["Control", "JS"], status: "Playable", link: "projects/pid-lab/" },
-  { name: "Cube Solver", desc: "Rubik's cube solver.", tags: ["Python", "Algorithms"], status: "Completed", link: "" },
+  { name: "Cube Solver", desc: "Rubik's cube solver.", tags: ["Python", "Algorithms"], status: "Completed", link: "", image: "images/cube-solver.jpg", alt: "A Rubik's cube", credit: "" },
   { name: "Neural Pong", desc: "Single-file HTML game with optional biometric input.", tags: ["HTML", "Game"], status: "Playable", link: "" },
   { name: "TICTOE", desc: "GameFi project on Base.", tags: ["Web3", "GameFi"], status: "In progress", link: "" },
 ];
@@ -33,26 +35,12 @@ function esc(t) {
   return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const grid = document.getElementById("project-grid");
-if (grid) {
-  const limit = grid.dataset.limit ? parseInt(grid.dataset.limit, 10) : PROJECTS.length;
-  PROJECTS.slice(0, limit).forEach((p) => {
-    const el = document.createElement("div");
-    el.className = "card";
-    const title = p.link ? `<a href="${p.link}">${esc(p.name)}</a>` : esc(p.name);
-    const guide = p.guide ? `<a class="guide-link" href="guide.html?p=${encodeURIComponent(p.guide)}">View build guide →</a>` : "";
-    el.innerHTML = `<h3>${title}</h3><p class="muted">${esc(p.desc)}</p>
-      <p>${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</p>
-      <span class="status">${esc(p.status)}</span>${guide}`;
-    grid.appendChild(el);
-  });
-}
-
 // Step-by-step guides for projects whose files aren't posted.
 // Add a new one here, then set guide: "<key>" on the project.
 const GUIDES = {
   "gesture-lab": {
     title: "Gesture Lab: run it on your PC",
+    members: true,
     intro: "A webcam playground built with Python, OpenCV and MediaPipe. It has four modes: Air Draw, Finger Counter, Virtual Mouse and Colour Tracker. Everything runs on your own computer.",
     downloads: [
       { label: "gesture-lab.zip (all files)", href: "projects/gesture-lab/gesture-lab.zip" },
@@ -79,6 +67,7 @@ const GUIDES = {
   },
   "offline-ai-chatbot": {
     title: "Build an offline AI chatbot",
+    members: true,
     intro: "Run a Llama-style language model entirely on your own computer. Once the model is downloaded, no internet and no account are needed. It uses your CPU (and your GPU if you have one), so the model size you pick depends on your specs.",
     needs: [
       "Windows, macOS or Linux",
@@ -100,24 +89,82 @@ const GUIDES = {
   }
 };
 
+
+// ---- Sign-in state (set by auth.js). undefined = still loading.
+const authState = () => window.JL_AUTH || { status: "pending", user: null };
+const isLocked = (item) => item.members && authState().status !== "disabled" && !authState().user;
+const askSignIn = () => document.dispatchEvent(new Event("jl-open-signin"));
+
+const grid = document.getElementById("project-grid");
+function renderProjects() {
+  if (!grid) return;
+  grid.textContent = "";
+  const limit = grid.dataset.limit ? parseInt(grid.dataset.limit, 10) : PROJECTS.length;
+  PROJECTS.slice(0, limit).forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    const title = p.link ? `<a href="${p.link}">${esc(p.name)}</a>` : esc(p.name);
+    const pic = p.image
+      ? `<figure class="card-fig"><img class="card-img" src="${esc(p.image)}" alt="${esc(p.alt || "")}" loading="lazy" onerror="this.parentNode.remove()">${p.credit ? `<figcaption class="muted">${esc(p.credit)}</figcaption>` : ""}</figure>`
+      : "";
+    let guide = "";
+    if (p.guide) {
+      const st = authState().status;
+      if (!isLocked(p)) guide = `<a class="guide-link" href="guide.html?p=${encodeURIComponent(p.guide)}">View build guide →</a>`;
+      else if (st === "pending") guide = `<span class="guide-link muted">Checking sign-in…</span>`;
+      else if (st === "error") guide = `<span class="guide-link muted">Guide unavailable: sign-in is offline</span>`;
+      else guide = `<button class="guide-link lock-btn" type="button" data-signin>Sign in to view the build guide</button>`;
+    }
+    el.innerHTML = `${pic}<h3>${title}</h3><p class="muted">${esc(p.desc)}</p>
+      <p>${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</p>
+      <span class="status">${esc(p.status)}</span>${guide}`;
+    grid.appendChild(el);
+  });
+  grid.querySelectorAll("[data-signin]").forEach((b) => b.addEventListener("click", askSignIn));
+}
+
 const guideBox = document.getElementById("guide");
-if (guideBox) {
+function renderGuide() {
+  if (!guideBox) return;
   const key = new URLSearchParams(location.search).get("p");
   const g = Object.prototype.hasOwnProperty.call(GUIDES, key) ? GUIDES[key] : null;
   if (!g) {
     guideBox.innerHTML = `<h1>Guide not found</h1><p class="muted">That guide doesn't exist. <a href="projects.html">Back to projects</a></p>`;
-  } else {
-    document.title = `${g.title} · JoeLabs`;
-    guideBox.innerHTML = `<p><a href="projects.html">← Projects</a></p>
-      <h1>${esc(g.title)}</h1>
-      <p class="muted">${esc(g.intro)}</p>
-      ${g.downloads ? `<h2>Download</h2><ul class="guide-meta">${g.downloads.map((d) => `<li><a href="${d.href}" download>${esc(d.label)}</a></li>`).join("")}</ul>` : ""}
-      <h2>What you need</h2>
-      <ul class="guide-meta">${g.needs.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
-      <h2>Steps</h2>
-      <ol class="steps">${g.steps.map((s) => `<li><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p>${s.code ? `<pre><code>${esc(s.code)}</code></pre>` : ""}</li>`).join("")}</ol>`;
+    return;
   }
+  document.title = `${g.title} · JoeLabs`;
+  if (isLocked(g)) {
+    const st = authState().status;
+    if (st === "pending") { guideBox.innerHTML = `<p class="muted">Checking sign-in…</p>`; return; }
+    guideBox.innerHTML = `<p><a href="projects.html">← Projects</a></p><h1>${esc(g.title)}</h1>` +
+      (st === "error"
+        ? `<p class="muted">Sign-in is unavailable right now. Please try again later.</p>`
+        : `<p class="muted">This guide is for signed-in visitors. It's free and takes a few seconds.</p><button class="btn" id="wall-signin" type="button">Sign in to continue</button>`);
+    const b = document.getElementById("wall-signin");
+    if (b) b.addEventListener("click", askSignIn);
+    return;
+  }
+  guideBox.innerHTML = `<p><a href="projects.html">← Projects</a></p>
+    <h1>${esc(g.title)}</h1>
+    <p class="muted">${esc(g.intro)}</p>
+    ${g.downloads ? `<h2>Download</h2><ul class="guide-meta">${g.downloads.map((d) => `<li><a href="${d.href}" download>${esc(d.label)}</a></li>`).join("")}</ul>` : ""}
+    <h2>What you need</h2>
+    <ul class="guide-meta">${g.needs.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
+    <h2>Steps</h2>
+    <ol class="steps">${g.steps.map((s) => `<li><h3>${esc(s.title)}</h3><p>${esc(s.text)}</p>${s.code ? `<pre><code>${esc(s.code)}</code></pre>` : ""}</li>`).join("")}</ol>`;
 }
+
+renderProjects();
+renderGuide();
+document.addEventListener("jl-auth", () => { renderProjects(); renderGuide(); });
+// If sign-in never reports back (blocked or offline), stop waiting.
+setTimeout(() => {
+  if (!window.JL_AUTH) {
+    window.JL_AUTH = { status: "error", user: null };
+    renderProjects();
+    renderGuide();
+  }
+}, 6000);
 
 // Notes are defined here too. Newest first.
 const NOTES = [

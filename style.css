@@ -60,3 +60,43 @@ footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--bor
 pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; overflow-x: auto; font-size: .85rem; line-height: 1.45; }
 .guide-meta li { margin: .2rem 0; }
 .socials span { color: var(--text); }
+
+/* Background image (add images/bg.jpg; a dark overlay keeps text readable) */
+:root { --overlay: rgba(13,17,23,.9); }
+:root[data-theme="light"] { --overlay: rgba(246,248,250,.92); }
+body {
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--overlay), var(--overlay)), url("images/bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+@media (max-width: 700px) { body { background-attachment: scroll; } }
+
+/* Card pictures */
+.card-fig { margin: 0 0 .7rem; }
+.card-img { display: block; width: 100%; height: 150px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); }
+.card-img[src$=".svg"] { object-fit: contain; height: 110px; border: 0; }
+.card-fig figcaption { font-size: .72rem; margin-top: .2rem; }
+
+/* Sign-in */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#auth-slot { margin-left: 1rem; }
+.auth-name { font-size: .85rem; margin-right: .5rem; }
+.auth-btn, .btn, .lock-btn, dialog.signin button {
+  background: none; border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+  padding: .35rem .8rem; cursor: pointer; font: inherit;
+}
+.auth-btn:hover, .btn:hover, .lock-btn:hover, dialog.signin button:hover { border-color: var(--accent); color: var(--accent); }
+.lock-btn { margin-top: .4rem; font-size: .85rem; }
+dialog.signin {
+  background: var(--panel); color: var(--text); border: 1px solid var(--accent); border-radius: 12px;
+  width: min(380px, calc(100% - 2rem)); padding: 1.4rem; box-shadow: 0 0 24px rgba(63,185,80,.25);
+}
+dialog.signin::backdrop { background: rgba(0,0,0,.65); }
+dialog.signin h2 { margin-top: 0; }
+.si-buttons { display: grid; gap: .5rem; margin: 1rem 0 .5rem; }
+.si-buttons button { padding: .55rem .8rem; }
+.si-msg { color: #ff7b72; min-height: 1.2em; font-size: .85rem; margin: .3rem 0; }
+.si-later { border: 0 !important; color: var(--muted) !important; padding-left: 0 !important; }
+.si-note { font-size: .78rem; margin-bottom: 0; }
